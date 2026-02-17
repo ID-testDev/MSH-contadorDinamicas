@@ -90,7 +90,8 @@ def parse_podium_positions(podium_raw: str):
 
     Ej: "🖤(🤍💚)💚" -> positions = [["🖤"], ["🤍","💚"], ["💚"]]
 
-    También regresa warnings/errores de formato para validación.
+    Validación:
+    - Si hay paréntesis en el podio, deben contener EXACTAMENTE 2 emojis.
     """
     s = normalize_line(podium_raw).replace(" ", "")
     positions: list[list[str]] = []
@@ -104,19 +105,18 @@ def parse_podium_positions(podium_raw: str):
             j = s.find(")", i + 1)
             if j == -1:
                 errors.append("Paréntesis '(' sin cerrar en el podio.")
-                # ignoramos y seguimos
                 i += 1
                 continue
 
             inside = s[i + 1 : j]
             emos = [e for e in split_graphemes(inside) if e not in ("(", ")")]
 
-            # ✅ Validación pedida: en podio, si hay paréntesis, deben ser EXACTAMENTE 2 emojis
             if len(emos) != 2:
                 errors.append(
                     f"Grupo con paréntesis inválido: se esperaban EXACTAMENTE 2 emojis dentro de '(...)' "
                     f"pero encontré {len(emos)} en: '({inside})'"
                 )
+
             if emos:
                 positions.append(emos)
 
@@ -144,8 +144,9 @@ def parse_podium_positions(podium_raw: str):
 
 def emojis_in_nonpodium_line(line: str) -> list[str]:
     """
-    Para líneas fuera del podio: contamos TODOS los emojis, aunque vengan en paréntesis.
-    (Quitamos paréntesis y contamos lo de adentro igual)
+    Para líneas fuera del podio:
+    - contamos TODOS los emojis, aunque vengan en paréntesis
+    - quitamos paréntesis y contamos lo de adentro igual
     """
     s = normalize_line(line).replace(" ", "").replace("(", "").replace(")", "")
     return split_graphemes(s)
@@ -236,8 +237,64 @@ if st.button("Calcular"):
         out_lines += [f"{emo}: {pts}" for emo, pts in ranking]
         st.code("\n".join(out_lines), language="text")
 
+        # ----------------------------
+        # DEBUG (con subtotales por línea)
+        # ----------------------------
         with st.expander("Ver rondas parseadas (debug)"):
             for rn in sorted(rounds.keys()):
-                st.write(f"**Ronda {rn}**")
-                for i, ln in enumerate(rounds[rn], start=1):
-                    st.write(f"{i}. `{ln}`")
+                st.markdown(f"## Ronda {rn}")
+
+                lines = rounds[rn]
+                if not lines:
+                    st.write("⚠️ Sin datos")
+                    st.markdown("---")
+                    continue
+
+                # ---------- PODIO ----------
+                st.markdown("### 🥇 Podio")
+                podium = lines[0]
+                positions, podio_errors = parse_podium_positions(podium)
+
+                if podio_errors:
+                    for e in podio_errors:
+                        st.write(f"⚠️ {e}")
+
+                pts_map = [100, 90, 80]
+
+                if len(positions) != 3:
+                    st.write(f"❌ Podio inválido: `{podium}`")
+                else:
+                    for pos_idx, (pos, pts) in enumerate(zip(positions, pts_map), start=1):
+                        if len(pos) == 1:
+                            st.write(f"Posición {pos_idx}: {pos[0]} → {pts} pts")
+                        else:
+                            st.write(f"Posición {pos_idx}: {' '.join(pos)} → {pts} pts c/u (empate)")
+
+                # ---------- LÍNEAS EXTRA (RESUMEN) ----------
+                if len(lines) > 1:
+                    st.markdown("### 📌 Líneas extra (60 pts c/u)")
+                    for idx, extra in enumerate(lines[1:], start=2):
+                        emos = emojis_in_nonpodium_line(extra)
+                        subtotal = len(emos) * 60
+                        shown = normalize_line(extra)
+                        st.write(f"Línea {idx}: {shown} — **{subtotal} puntos**")
+
+                # ---------- TOTAL POR RONDA ----------
+                st.markdown("### 📊 Total por ronda")
+                temp_totals = defaultdict(int)
+
+                # Podio
+                if len(positions) == 3:
+                    for pos, pts in zip(positions, pts_map):
+                        for emo in pos:
+                            temp_totals[emo] += pts
+
+                # Extras
+                for extra in lines[1:]:
+                    for emo in emojis_in_nonpodium_line(extra):
+                        temp_totals[emo] += 60
+
+                for emo, pts in sorted(temp_totals.items(), key=lambda x: (-x[1], x[0])):
+                    st.write(f"{emo}: **{pts}**")
+
+                st.markdown("---")
