@@ -11,9 +11,13 @@ except Exception:
     import re  # type: ignore
     HAS_REGEX = False
 
+
 ROUND_RE = re.compile(r"^\s*(\d+)\.\s*(.*)\s*$")
 
 
+# ----------------------------
+# Helpers
+# ----------------------------
 def normalize_line(s: str) -> str:
     return unicodedata.normalize("NFC", s).strip()
 
@@ -36,7 +40,7 @@ def parse_input(text: str):
     """
     title = primera línea no vacía
     rounds[ronda] = lista de líneas (strings) dentro de la ronda, en orden,
-                   donde rounds[ronda][0] es el podio (3 emojis).
+                   donde rounds[ronda][0] es el podio (3 posiciones).
     """
     lines = text.splitlines()
     cleaned = [unicodedata.normalize("NFC", ln.rstrip("\n\r")) for ln in lines]
@@ -57,7 +61,7 @@ def parse_input(text: str):
         line = normalize_line(cleaned[j])
 
         if not line:
-            continue  # separadores
+            continue  # separadores (incluye "líneas vacías" con espacios)
 
         m = ROUND_RE.match(line)
         if m:
@@ -79,24 +83,98 @@ def parse_input(text: str):
     return title, rounds
 
 
+def parse_podium_positions(podium_raw: str):
+    """
+    Convierte la línea de podio en una lista de 3 posiciones.
+    Cada posición es una lista de 1+ emojis (para empates en paréntesis).
+
+    Ej: "🖤(🤍💚)💚" -> positions = [["🖤"], ["🤍","💚"], ["💚"]]
+
+    También regresa warnings/errores de formato para validación.
+    """
+    s = normalize_line(podium_raw).replace(" ", "")
+    positions: list[list[str]] = []
+    errors: list[str] = []
+
+    i = 0
+    while i < len(s):
+        ch = s[i]
+
+        if ch == "(":
+            j = s.find(")", i + 1)
+            if j == -1:
+                errors.append("Paréntesis '(' sin cerrar en el podio.")
+                # ignoramos y seguimos
+                i += 1
+                continue
+
+            inside = s[i + 1 : j]
+            emos = [e for e in split_graphemes(inside) if e not in ("(", ")")]
+
+            # ✅ Validación pedida: en podio, si hay paréntesis, deben ser EXACTAMENTE 2 emojis
+            if len(emos) != 2:
+                errors.append(
+                    f"Grupo con paréntesis inválido: se esperaban EXACTAMENTE 2 emojis dentro de '(...)' "
+                    f"pero encontré {len(emos)} en: '({inside})'"
+                )
+            if emos:
+                positions.append(emos)
+
+            i = j + 1
+            continue
+
+        if ch == ")":
+            errors.append("Paréntesis ')' suelto en el podio.")
+            i += 1
+            continue
+
+        # Tomar 1 emoji (grapheme) desde i
+        if HAS_REGEX:
+            m = re.match(r"\X", s[i:])
+            g = m.group(0) if m else s[i]
+            if g not in ("(", ")"):
+                positions.append([g])
+            i += len(g)
+        else:
+            positions.append([ch])
+            i += 1
+
+    return positions, errors
+
+
+def emojis_in_nonpodium_line(line: str) -> list[str]:
+    """
+    Para líneas fuera del podio: contamos TODOS los emojis, aunque vengan en paréntesis.
+    (Quitamos paréntesis y contamos lo de adentro igual)
+    """
+    s = normalize_line(line).replace(" ", "").replace("(", "").replace(")", "")
+    return split_graphemes(s)
+
+
 def score_round(lines: list[str], totals: defaultdict[str, int], errors: list[str], rn: int):
     if not lines:
         errors.append(f"Ronda {rn}: no tiene líneas.")
         return
 
-    podium_raw = normalize_line(lines[0])
-    podium_emojis = split_graphemes(podium_raw)
+    podium_raw = lines[0]
+    positions, podio_errors = parse_podium_positions(podium_raw)
+    for pe in podio_errors:
+        errors.append(f"Ronda {rn}: {pe}")
 
-    if len(podium_emojis) != 3:
+    # Validación: 3 posiciones
+    if len(positions) != 3:
         errors.append(
-            f"Ronda {rn}: la línea de podio debe tener EXACTAMENTE 3 emojis, pero encontré {len(podium_emojis)} en: '{podium_raw}'"
+            f"Ronda {rn}: el podio debe tener EXACTAMENTE 3 posiciones (emojis sueltos o grupos), "
+            f"pero encontré {len(positions)} en: '{normalize_line(podium_raw)}'"
         )
     else:
-        for emo, pts in zip(podium_emojis, [100, 90, 80]):
-            totals[emo] += pts
+        for pos_idx, pts in enumerate([100, 90, 80]):
+            for emo in positions[pos_idx]:
+                totals[emo] += pts
 
+    # Resto de líneas: cada emoji vale 60
     for extra_line in lines[1:]:
-        for emo in split_graphemes(extra_line):
+        for emo in emojis_in_nonpodium_line(extra_line):
             totals[emo] += 60
 
 
@@ -124,20 +202,22 @@ Pega aquí el input completo.
 **Formato:**
 - La **primera línea** (no vacía) es el **título** (puede variar).
 - Cada ronda inicia con `N.`.
-- La línea del `N.` es el **podio** y debe tener **3 emojis** → 100 / 90 / 80.
+- La línea del `N.` es el **podio** y tiene **3 posiciones**:
+  - 1er lugar = 100, 2do = 90, 3er = 80
+  - Puede haber empates en una posición usando paréntesis, por ejemplo: `1. 🖤(🤍💚)💚`
+  - **Validación:** si hay paréntesis en el podio, deben contener **EXACTAMENTE 2 emojis**
 - Las líneas siguientes dentro de esa ronda: **cada emoji vale 60**.
-- Líneas en blanco se ignoran (solo separan).
+- Líneas en blanco se ignoran (WhatsApp suele meter espacios invisibles).
 """
 )
 
-text = st.text_area("Input", height=460)
+text = st.text_area("Input", height=520)
 
 if st.button("Calcular"):
     title, rounds = parse_input(text)
     ranking, errors = compute_scores(rounds)
 
     st.subheader(title or "Resultados")
-
     st.write(f"Rondas detectadas: **{len(rounds)}**")
 
     if errors:
@@ -155,3 +235,9 @@ if st.button("Calcular"):
         out_lines = [title] if title else ["Resultados"]
         out_lines += [f"{emo}: {pts}" for emo, pts in ranking]
         st.code("\n".join(out_lines), language="text")
+
+        with st.expander("Ver rondas parseadas (debug)"):
+            for rn in sorted(rounds.keys()):
+                st.write(f"**Ronda {rn}**")
+                for i, ln in enumerate(rounds[rn], start=1):
+                    st.write(f"{i}. `{ln}`")
