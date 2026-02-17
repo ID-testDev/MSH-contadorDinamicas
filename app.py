@@ -14,6 +14,14 @@ except Exception:
 
 ROUND_RE = re.compile(r"^\s*(\d+)\.\s*(.*)\s*$")
 
+# Equipos fijos (por ahora)
+TEAM_ORDER = ["🤍", "💚", "🖤"]
+TEAM_NAME = {
+    "🤍": "𝐃𝐫𝐚𝐠𝐨𝐧𝐬𝐭𝐨𝐧𝐞",
+    "💚": "𝐇𝐢𝐠𝐡𝐭𝐨𝐰𝐞𝐫",
+    "🖤": "𝐓𝐚𝐫𝐠𝐚𝐫𝐲𝐞𝐧",
+}
+
 
 # ----------------------------
 # Helpers
@@ -31,7 +39,6 @@ def split_graphemes(s: str) -> list[str]:
     if not s:
         return []
     if HAS_REGEX:
-        # \X = grapheme cluster
         return [g for g in re.findall(r"\X", s) if g and g != "\u200d"]
     return list(s)
 
@@ -88,7 +95,7 @@ def parse_podium_positions(podium_raw: str):
     Convierte la línea de podio en una lista de 3 posiciones.
     Cada posición es una lista de 1+ emojis (para empates en paréntesis).
 
-    Ej: "🖤(🤍💚)💚" -> positions = [["🖤"], ["🤍","💚"], ["💚"]]
+    Ej: "🖤(🤍💚)💚" -> [["🖤"], ["🤍","💚"], ["💚"]]
 
     Validación:
     - Si hay paréntesis en el podio, deben contener EXACTAMENTE 2 emojis.
@@ -187,7 +194,41 @@ def compute_scores(rounds: dict[int, list[str]]):
         score_round(rounds[rn], totals, errors, rn)
 
     ranking = sorted(totals.items(), key=lambda x: (-x[1], x[0]))
-    return ranking, errors
+    return totals, ranking, errors
+
+
+def format_points(n: int) -> str:
+    # 1680 -> "1.680"
+    return f"{int(n):,}".replace(",", ".")
+
+
+def render_fancy_output(dynamic_name: str, totals: dict[str, int]) -> str:
+    """
+    Genera exactamente el formato decorado.
+    Usa SOLO los 3 equipos fijos (🤍💚🖤). Si falta alguno, se va como "0".
+    """
+    name = dynamic_name or "Dinámica"
+    pts = {emo: format_points(int(totals.get(emo, 0))) for emo in TEAM_ORDER}
+
+    out = []
+    out.append("╭ ㅤ⃝⃕🖤 ᮫   ▭ׅ ▭ׅ ▭ֹ  🔥ᱹ")
+    out.append("╭ִ╼࣪━╼࣪╼࣪━╼࣪╼࣪━╼࣪━╯ . .")
+
+    out.append(f"𝇈⃘  𝆬 ֶָ֪ 𝆬🤍̵  ׅ 𖠵 {TEAM_NAME['🤍']} १ׁ꤫•")
+    out.append(f"　⃝ ◯˙ ᜔• {pts['🤍']}")
+    out.append("")
+
+    out.append(f"𝇈⃘  𝆬 ֶָ֪ 𝆬💚̵  ׅ 𖠵 {TEAM_NAME['💚']} १ׁ꤫•")
+    out.append(f"　⃝ ◯˙ ᜔• {pts['💚']}")
+    out.append("")
+
+    out.append(f"𝇈⃘  𝆬 ֶָ֪ 𝆬🖤̵  ׅ 𖠵 {TEAM_NAME['🖤']} १ׁ꤫•")
+    out.append(f"　⃝ ◯˙ ᜔• {pts['🖤']}")
+    out.append("")
+    out.append("    ╾─̇─ ׄ  𖤐 ׅ ⇢ 𝕯𝖎𝖓á𝖒𝖎𝖈𝖆  ׅ  ׅ ׅ   ׄ  ׄ  ׄ ")
+    out.append("╰▭ׄ ׅ▬ׅ ▭ׄ ׅ▬ׅ ▭ׄ ׅ▬ׅ ׄ▭ׅ ׄ▬ׅ ׄ▭ ׅ ׄ▬ׅ ִ")
+
+    return "\n".join(out).replace("𝕯𝖎𝖓á𝖒𝖎𝖈𝖆", name)
 
 
 # ----------------------------
@@ -201,7 +242,7 @@ st.markdown(
 Pega aquí el input completo.
 
 **Formato:**
-- La **primera línea** (no vacía) es el **título** (puede variar).
+- La **primera línea** (no vacía) es el **título** (nombre de la dinámica).
 - Cada ronda inicia con `N.`.
 - La línea del `N.` es el **podio** y tiene **3 posiciones**:
   - 1er lugar = 100, 2do = 90, 3er = 80
@@ -216,7 +257,7 @@ text = st.text_area("Input", height=520)
 
 if st.button("Calcular"):
     title, rounds = parse_input(text)
-    ranking, errors = compute_scores(rounds)
+    totals, ranking, errors = compute_scores(rounds)
 
     st.subheader(title or "Resultados")
     st.write(f"Rondas detectadas: **{len(rounds)}**")
@@ -226,75 +267,62 @@ if st.button("Calcular"):
         for e in errors:
             st.write(f"- {e}")
 
-    if not ranking:
-        st.warning("No se detectaron emojis para puntuar.")
-    else:
-        st.markdown("### 🏆 Ranking final")
-        st.table([{"Participante": emo, "Puntos": pts} for emo, pts in ranking])
+    fancy = render_fancy_output(title, totals)
+    st.markdown("### 📋 Output (formato para WhatsApp)")
+    st.code(fancy, language="text")
 
-        st.markdown("### 📋 Salida para copiar")
-        out_lines = [title] if title else ["Resultados"]
-        out_lines += [f"{emo}: {pts}" for emo, pts in ranking]
-        st.code("\n".join(out_lines), language="text")
+    with st.expander("Ver tabla de puntos (interno)"):
+        st.table([{"Equipo": emo, "Puntos": int(totals.get(emo, 0))} for emo in TEAM_ORDER])
 
-        # ----------------------------
-        # DEBUG (con subtotales por línea)
-        # ----------------------------
-        with st.expander("Ver rondas parseadas (debug)"):
-            for rn in sorted(rounds.keys()):
-                st.markdown(f"## Ronda {rn}")
+    with st.expander("Ver rondas parseadas (debug)"):
+        for rn in sorted(rounds.keys()):
+            st.markdown(f"## Ronda {rn}")
 
-                lines = rounds[rn]
-                if not lines:
-                    st.write("⚠️ Sin datos")
-                    st.markdown("---")
-                    continue
-
-                # ---------- PODIO ----------
-                st.markdown("### 🥇 Podio")
-                podium = lines[0]
-                positions, podio_errors = parse_podium_positions(podium)
-
-                if podio_errors:
-                    for e in podio_errors:
-                        st.write(f"⚠️ {e}")
-
-                pts_map = [100, 90, 80]
-
-                if len(positions) != 3:
-                    st.write(f"❌ Podio inválido: `{podium}`")
-                else:
-                    for pos_idx, (pos, pts) in enumerate(zip(positions, pts_map), start=1):
-                        if len(pos) == 1:
-                            st.write(f"Posición {pos_idx}: {pos[0]} → {pts} pts")
-                        else:
-                            st.write(f"Posición {pos_idx}: {' '.join(pos)} → {pts} pts c/u (empate)")
-
-                # ---------- LÍNEAS EXTRA (RESUMEN) ----------
-                if len(lines) > 1:
-                    st.markdown("### 📌 Líneas extra (60 pts c/u)")
-                    for idx, extra in enumerate(lines[1:], start=2):
-                        emos = emojis_in_nonpodium_line(extra)
-                        subtotal = len(emos) * 60
-                        shown = normalize_line(extra)
-                        st.write(f"Línea {idx}: {shown} — **{subtotal} puntos**")
-
-                # ---------- TOTAL POR RONDA ----------
-                st.markdown("### 📊 Total por ronda")
-                temp_totals = defaultdict(int)
-
-                # Podio
-                if len(positions) == 3:
-                    for pos, pts in zip(positions, pts_map):
-                        for emo in pos:
-                            temp_totals[emo] += pts
-
-                # Extras
-                for extra in lines[1:]:
-                    for emo in emojis_in_nonpodium_line(extra):
-                        temp_totals[emo] += 60
-
-                for emo, pts in sorted(temp_totals.items(), key=lambda x: (-x[1], x[0])):
-                    st.write(f"{emo}: **{pts}**")
-
+            lines = rounds[rn]
+            if not lines:
+                st.write("⚠️ Sin datos")
                 st.markdown("---")
+                continue
+
+            st.markdown("### 🥇 Podio")
+            podium = lines[0]
+            positions, podio_errors = parse_podium_positions(podium)
+
+            if podio_errors:
+                for e in podio_errors:
+                    st.write(f"⚠️ {e}")
+
+            pts_map = [100, 90, 80]
+            if len(positions) != 3:
+                st.write(f"❌ Podio inválido: `{podium}`")
+            else:
+                for pos_idx, (pos, pts) in enumerate(zip(positions, pts_map), start=1):
+                    if len(pos) == 1:
+                        st.write(f"Posición {pos_idx}: {pos[0]} → {pts} pts")
+                    else:
+                        st.write(f"Posición {pos_idx}: {' '.join(pos)} → {pts} pts c/u (empate)")
+
+            if len(lines) > 1:
+                st.markdown("### 📌 Líneas extra (60 pts c/u)")
+                for idx, extra in enumerate(lines[1:], start=2):
+                    emos = emojis_in_nonpodium_line(extra)
+                    subtotal = len(emos) * 60
+                    shown = normalize_line(extra)
+                    st.write(f"Línea {idx}: {shown} — **{format_points(subtotal)} puntos**")
+
+            st.markdown("### 📊 Total por ronda")
+            temp_totals = defaultdict(int)
+
+            if len(positions) == 3:
+                for pos, pts in zip(positions, pts_map):
+                    for emo in pos:
+                        temp_totals[emo] += pts
+
+            for extra in lines[1:]:
+                for emo in emojis_in_nonpodium_line(extra):
+                    temp_totals[emo] += 60
+
+            for emo, pts in sorted(temp_totals.items(), key=lambda x: (-x[1], x[0])):
+                st.write(f"{emo}: **{format_points(pts)}**")
+
+            st.markdown("---")
