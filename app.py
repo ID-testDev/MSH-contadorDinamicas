@@ -24,7 +24,7 @@ TEAM_NAME = {
 
 
 # ----------------------------
-# Helpers
+# Helpers (texto / emojis)
 # ----------------------------
 def normalize_line(s: str) -> str:
     return unicodedata.normalize("NFC", s).strip()
@@ -45,20 +45,20 @@ def split_graphemes(s: str) -> list[str]:
 
 def parse_input(text: str):
     """
-    title = primera línea no vacía
+    title_raw = primera línea no vacía (ej. "Ahorcado - Areli 🐧")
     rounds[ronda] = lista de líneas (strings) dentro de la ronda, en orden,
                    donde rounds[ronda][0] es el podio (3 posiciones).
     """
     lines = text.splitlines()
     cleaned = [unicodedata.normalize("NFC", ln.rstrip("\n\r")) for ln in lines]
 
-    # título
-    title = ""
+    # encabezado
+    title_raw = ""
     i = 0
     while i < len(cleaned) and not normalize_line(cleaned[i]):
         i += 1
     if i < len(cleaned):
-        title = normalize_line(cleaned[i])
+        title_raw = normalize_line(cleaned[i])
         i += 1
 
     rounds: dict[int, list[str]] = {}
@@ -87,7 +87,7 @@ def parse_input(text: str):
         if lst and normalize_line(lst[0]) == "":
             lst.pop(0)
 
-    return title, rounds
+    return title_raw, rounds
 
 
 def parse_podium_positions(podium_raw: str):
@@ -159,6 +159,56 @@ def emojis_in_nonpodium_line(line: str) -> list[str]:
     return split_graphemes(s)
 
 
+# ----------------------------
+# Helpers (puntos / nombre dinámica / letras bonitas)
+# ----------------------------
+def format_points(n: int) -> str:
+    # 1680 -> "1.680"
+    return f"{int(n):,}".replace(",", ".")
+
+
+def extract_dynamic_name(title_raw: str) -> str:
+    """
+    "Ahorcado - Areli 🐧" -> "Ahorcado"
+    "Reloj de Arena - Yuls 🌙" -> "Reloj de Arena"
+    Si no hay '-', regresa el título completo.
+    """
+    t = normalize_line(title_raw)
+    if "-" in t:
+        left = t.split("-", 1)[0].strip()
+        return left if left else t
+    return t
+
+
+def strip_accents(s: str) -> str:
+    # "Dinámica" -> "Dinamica" (mejor para letras Unicode que no soportan acentos)
+    decomposed = unicodedata.normalize("NFD", s)
+    no_marks = "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+    return unicodedata.normalize("NFC", no_marks)
+
+
+# Mapa a "letras bonitas" (Mathematical Bold Fraktur)
+# Nota: no existe para todos los caracteres; lo que no exista se deja igual.
+FANCY_MAP = {
+    **{c: f for c, f in zip("ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                            "𝕬𝕭𝕮𝕯𝕰𝕱𝕲𝕳𝕴𝕵𝕶𝕷𝕸𝕹𝕺𝕻𝕼𝕽𝕾𝕿𝖀𝖁𝖂𝖃𝖄𝖅")},
+    **{c: f for c, f in zip("abcdefghijklmnopqrstuvwxyz",
+                            "𝖆𝖇𝖈𝖉𝖊𝖋𝖌𝖍𝖎𝖏𝖐𝖑𝖒𝖓𝖔𝖕𝖖𝖗𝖘𝖙𝖚𝖛𝖜𝖝𝖞𝖟")},
+}
+
+
+def to_fancy_text(s: str, remove_accents: bool = True) -> str:
+    """
+    Convierte "Encadenado" -> "𝕰𝖓𝖈𝖆𝖉𝖊𝖓𝖆𝖉𝖔"
+    Por compatibilidad visual, por default quita acentos: "Dinámica" -> "Dinamica".
+    """
+    base = strip_accents(s) if remove_accents else s
+    return "".join(FANCY_MAP.get(ch, ch) for ch in base)
+
+
+# ----------------------------
+# Scoring
+# ----------------------------
 def score_round(lines: list[str], totals: defaultdict[str, int], errors: list[str], rn: int):
     if not lines:
         errors.append(f"Ronda {rn}: no tiene líneas.")
@@ -197,17 +247,19 @@ def compute_scores(rounds: dict[int, list[str]]):
     return totals, ranking, errors
 
 
-def format_points(n: int) -> str:
-    # 1680 -> "1.680"
-    return f"{int(n):,}".replace(",", ".")
-
-
-def render_fancy_output(dynamic_name: str, totals: dict[str, int]) -> str:
+# ----------------------------
+# Output (formato decorado)
+# ----------------------------
+def render_fancy_output(dynamic_name_plain: str, totals: dict[str, int]) -> str:
     """
-    Genera exactamente el formato decorado.
-    Usa SOLO los 3 equipos fijos (🤍💚🖤). Si falta alguno, se va como "0".
+    Genera el formato decorado.
+    - dynamic_name_plain: nombre sin moderador (ej. "Ahorcado")
+    - El nombre se imprime en letras bonitas.
+    - Puntos con separador de miles con punto (1.680).
     """
-    name = dynamic_name or "Dinámica"
+    name_plain = dynamic_name_plain or "Dinamica"
+    name_fancy = to_fancy_text(name_plain, remove_accents=True)
+
     pts = {emo: format_points(int(totals.get(emo, 0))) for emo in TEAM_ORDER}
 
     out = []
@@ -225,10 +277,10 @@ def render_fancy_output(dynamic_name: str, totals: dict[str, int]) -> str:
     out.append(f"𝇈⃘  𝆬 ֶָ֪ 𝆬🖤̵  ׅ 𖠵 {TEAM_NAME['🖤']} १ׁ꤫•")
     out.append(f"　⃝ ◯˙ ᜔• {pts['🖤']}")
     out.append("")
-    out.append("    ╾─̇─ ׄ  𖤐 ׅ ⇢ 𝕯𝖎𝖓á𝖒𝖎𝖈𝖆  ׅ  ׅ ׅ   ׄ  ׄ  ׄ ")
+    out.append(f"    ╾─̇─ ׄ  𖤐 ׅ ⇢ {name_fancy}  ׅ  ׅ ׅ   ׄ  ׄ  ׄ ")
     out.append("╰▭ׄ ׅ▬ׅ ▭ׄ ׅ▬ׅ ▭ׄ ׅ▬ׅ ׄ▭ׅ ׄ▬ׅ ׄ▭ ׅ ׄ▬ׅ ִ")
 
-    return "\n".join(out).replace("𝕯𝖎𝖓á𝖒𝖎𝖈𝖆", name)
+    return "\n".join(out)
 
 
 # ----------------------------
@@ -242,11 +294,12 @@ st.markdown(
 Pega aquí el input completo.
 
 **Formato:**
-- La **primera línea** (no vacía) es el **título** (nombre de la dinámica).
+- La **primera línea** (no vacía) es el encabezado (ej. `Ahorcado - Areli 🐧`).
+- Para el **nombre de la dinámica**, se usa solo lo de antes del `-` (trim).
 - Cada ronda inicia con `N.`.
 - La línea del `N.` es el **podio** y tiene **3 posiciones**:
   - 1er lugar = 100, 2do = 90, 3er = 80
-  - Puede haber empates en una posición usando paréntesis, por ejemplo: `1. 🖤(🤍💚)💚`
+  - Empate por posición con paréntesis, ej: `1. 🖤(🤍💚)💚`
   - **Validación:** si hay paréntesis en el podio, deben contener **EXACTAMENTE 2 emojis**
 - Las líneas siguientes dentro de esa ronda: **cada emoji vale 60**.
 - Líneas en blanco se ignoran (WhatsApp suele meter espacios invisibles).
@@ -256,10 +309,12 @@ Pega aquí el input completo.
 text = st.text_area("Input", height=520)
 
 if st.button("Calcular"):
-    title, rounds = parse_input(text)
+    title_raw, rounds = parse_input(text)
+    dynamic_name_plain = extract_dynamic_name(title_raw)
+
     totals, ranking, errors = compute_scores(rounds)
 
-    st.subheader(title or "Resultados")
+    st.subheader(dynamic_name_plain or "Resultados")
     st.write(f"Rondas detectadas: **{len(rounds)}**")
 
     if errors:
@@ -267,12 +322,12 @@ if st.button("Calcular"):
         for e in errors:
             st.write(f"- {e}")
 
-    fancy = render_fancy_output(title, totals)
+    fancy = render_fancy_output(dynamic_name_plain, totals)
     st.markdown("### 📋 Output (formato para WhatsApp)")
     st.code(fancy, language="text")
 
     with st.expander("Ver tabla de puntos (interno)"):
-        st.table([{"Equipo": emo, "Puntos": int(totals.get(emo, 0))} for emo in TEAM_ORDER])
+        st.table([{"Equipo": emo, "Puntos": format_points(int(totals.get(emo, 0)))} for emo in TEAM_ORDER])
 
     with st.expander("Ver rondas parseadas (debug)"):
         for rn in sorted(rounds.keys()):
@@ -298,9 +353,9 @@ if st.button("Calcular"):
             else:
                 for pos_idx, (pos, pts) in enumerate(zip(positions, pts_map), start=1):
                     if len(pos) == 1:
-                        st.write(f"Posición {pos_idx}: {pos[0]} → {pts} pts")
+                        st.write(f"Posición {pos_idx}: {pos[0]} → {format_points(pts)} pts")
                     else:
-                        st.write(f"Posición {pos_idx}: {' '.join(pos)} → {pts} pts c/u (empate)")
+                        st.write(f"Posición {pos_idx}: {' '.join(pos)} → {format_points(pts)} pts c/u (empate)")
 
             if len(lines) > 1:
                 st.markdown("### 📌 Líneas extra (60 pts c/u)")
