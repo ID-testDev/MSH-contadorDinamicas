@@ -15,11 +15,11 @@ except Exception:
 ROUND_RE = re.compile(r"^\s*(\d+)\.\s*(.*)\s*$")
 
 # Equipos fijos (por ahora)
-TEAM_ORDER = ["🤍", "💚", "🖤"]
+TEAM_ORDER = ["❤️", "🧡", "🩶"]
 TEAM_NAME = {
-    "🤍": "𝐃𝐫𝐚𝐠𝐨𝐧𝐬𝐭𝐨𝐧𝐞",
-    "💚": "𝐇𝐢𝐠𝐡𝐭𝐨𝐰𝐞𝐫",
-    "🖤": "𝐓𝐚𝐫𝐠𝐚𝐫𝐲𝐞𝐧",
+    "❤️": "𝐅𝐞𝐫𝐫𝐚𝐫𝐢",
+    "🧡": "𝐌𝐜𝐋𝐚𝐫𝐞𝐧",
+    "🩶": "𝐌𝐞𝐫𝐜𝐞𝐝𝐞𝐬",
 }
 
 
@@ -90,17 +90,71 @@ def parse_input(text: str):
     return title_raw, rounds
 
 
-def parse_podium_positions(podium_raw: str):
+# ----------------------------
+# Detección automática de formato
+# ----------------------------
+def detect_format(rounds: dict[int, list[str]]) -> str:
     """
-    Convierte la línea de podio en una lista de 3 posiciones.
-    Cada posición es una lista de 1+ emojis (para empates en paréntesis).
+    Detecta si el input es formato 'podio' (clásico) o 'lineal' (nuevo).
 
-    Ej: "🖤(🤍💚)💚" -> [["🖤"], ["🤍","💚"], ["💚"]]
+    Formato PODIO (clásico):
+      - Cada ronda tiene EXACTAMENTE 3 posiciones en la primera línea (el podio)
+      - Puede tener líneas extra con emojis sueltos (60 pts c/u)
+      - Si TODAS las rondas tienen solo 1 línea con exactamente 3 posiciones -> podio
 
-    Validación:
-    - Si hay paréntesis en el podio, deben contener EXACTAMENTE 2 emojis.
+    Formato LINEAL (nuevo):
+      - Cada ronda es UNA sola línea con N posiciones en orden
+      - Las posiciones son: 1ro=100, 2do=90, 3ro=80, resto=60
+      - Si alguna ronda tiene solo 1 línea con MÁS de 3 posiciones -> lineal
+
+    Heurística:
+      - Parsear las posiciones de la primera línea de cada ronda
+      - Si la mayoría tiene >3 posiciones -> lineal
+      - Si la mayoría tiene exactamente 3 -> podio
     """
-    s = normalize_line(podium_raw).replace(" ", "")
+    if not rounds:
+        return "podio"
+
+    lineal_votes = 0
+    podio_votes = 0
+
+    for rn, lines in rounds.items():
+        if not lines:
+            continue
+        first_line = lines[0]
+        positions, _ = parse_positions_line(first_line)
+        n = len(positions)
+
+        if n > 3:
+            lineal_votes += 1
+        elif n == 3 and len(lines) == 1:
+            # Podría ser cualquiera; si no hay líneas extra pesa poco
+            podio_votes += 1
+        elif n == 3 and len(lines) > 1:
+            # Tiene líneas extra -> claramente formato podio
+            podio_votes += 2
+        else:
+            # n < 3 o n == 0: ambiguo, no cuenta
+            pass
+
+    if lineal_votes > podio_votes:
+        return "lineal"
+    return "podio"
+
+
+# ----------------------------
+# Parser de posiciones (genérico, para ambos formatos)
+# ----------------------------
+def parse_positions_line(line_raw: str):
+    """
+    Convierte una línea de emojis/grupos en una lista de posiciones.
+    Cada posición es una lista de 1+ emojis (empate si >1).
+
+    Ej: "❤️(🧡🩶)🩶❤️" -> [["❤️"], ["🧡","🩶"], ["🩶"], ["❤️"]]
+
+    Validación: paréntesis deben contener EXACTAMENTE 2 emojis.
+    """
+    s = normalize_line(line_raw).replace(" ", "")
     positions: list[list[str]] = []
     errors: list[str] = []
 
@@ -111,11 +165,11 @@ def parse_podium_positions(podium_raw: str):
         if ch == "(":
             j = s.find(")", i + 1)
             if j == -1:
-                errors.append("Paréntesis '(' sin cerrar en el podio.")
+                errors.append("Paréntesis '(' sin cerrar.")
                 i += 1
                 continue
 
-            inside = s[i + 1 : j]
+            inside = s[i + 1: j]
             emos = [e for e in split_graphemes(inside) if e not in ("(", ")")]
 
             if len(emos) != 2:
@@ -131,7 +185,7 @@ def parse_podium_positions(podium_raw: str):
             continue
 
         if ch == ")":
-            errors.append("Paréntesis ')' suelto en el podio.")
+            errors.append("Paréntesis ')' suelto.")
             i += 1
             continue
 
@@ -149,9 +203,14 @@ def parse_podium_positions(podium_raw: str):
     return positions, errors
 
 
+# Alias para compatibilidad con código existente
+def parse_podium_positions(podium_raw: str):
+    return parse_positions_line(podium_raw)
+
+
 def emojis_in_nonpodium_line(line: str) -> list[str]:
     """
-    Para líneas fuera del podio:
+    Para líneas fuera del podio (formato clásico):
     - contamos TODOS los emojis, aunque vengan en paréntesis
     - quitamos paréntesis y contamos lo de adentro igual
     """
@@ -188,7 +247,6 @@ def strip_accents(s: str) -> str:
 
 
 # Mapa a "letras bonitas" (Mathematical Bold Fraktur)
-# Nota: no existe para todos los caracteres; lo que no exista se deja igual.
 FANCY_MAP = {
     **{c: f for c, f in zip("ABCDEFGHIJKLMNOPQRSTUVWXYZ",
                             "𝕬𝕭𝕮𝕯𝕰𝕱𝕲𝕳𝕴𝕵𝕶𝕷𝕸𝕹𝕺𝕻𝕼𝕽𝕾𝕿𝖀𝖁𝖂𝖃𝖄𝖅")},
@@ -198,24 +256,20 @@ FANCY_MAP = {
 
 
 def to_fancy_text(s: str, remove_accents: bool = True) -> str:
-    """
-    Convierte "Encadenado" -> "𝕰𝖓𝖈𝖆𝖉𝖊𝖓𝖆𝖉𝖔"
-    Por compatibilidad visual, por default quita acentos: "Dinámica" -> "Dinamica".
-    """
     base = strip_accents(s) if remove_accents else s
     return "".join(FANCY_MAP.get(ch, ch) for ch in base)
 
 
 # ----------------------------
-# Scoring
+# Scoring — Formato PODIO (clásico)
 # ----------------------------
-def score_round(lines: list[str], totals: defaultdict[str, int], errors: list[str], rn: int):
+def score_round_podio(lines: list[str], totals: defaultdict[str, int], errors: list[str], rn: int):
     if not lines:
         errors.append(f"Ronda {rn}: no tiene líneas.")
         return
 
     podium_raw = lines[0]
-    positions, podio_errors = parse_podium_positions(podium_raw)
+    positions, podio_errors = parse_positions_line(podium_raw)
     for pe in podio_errors:
         errors.append(f"Ronda {rn}: {pe}")
 
@@ -236,12 +290,47 @@ def score_round(lines: list[str], totals: defaultdict[str, int], errors: list[st
             totals[emo] += 60
 
 
-def compute_scores(rounds: dict[int, list[str]]):
+# ----------------------------
+# Scoring — Formato LINEAL (nuevo)
+# ----------------------------
+def score_round_lineal(lines: list[str], totals: defaultdict[str, int], errors: list[str], rn: int):
+    """
+    Formato lineal: cada ronda es una sola línea con N posiciones en orden.
+    - 1ra posición = 100 pts
+    - 2da posición = 90 pts
+    - 3ra posición = 80 pts
+    - 4ta en adelante = 60 pts c/u
+    Los paréntesis siguen siendo empates (ambos equipos reciben los mismos puntos).
+    """
+    if not lines:
+        errors.append(f"Ronda {rn}: no tiene líneas.")
+        return
+
+    line_raw = lines[0]
+    positions, line_errors = parse_positions_line(line_raw)
+    for le in line_errors:
+        errors.append(f"Ronda {rn}: {le}")
+
+    if not positions:
+        errors.append(f"Ronda {rn}: no se encontraron posiciones en: '{normalize_line(line_raw)}'")
+        return
+
+    pts_map = [100, 90, 80]
+    for pos_idx, pos_emojis in enumerate(positions):
+        pts = pts_map[pos_idx] if pos_idx < len(pts_map) else 60
+        for emo in pos_emojis:
+            totals[emo] += pts
+
+
+def compute_scores(rounds: dict[int, list[str]], fmt: str):
     totals = defaultdict(int)
     errors: list[str] = []
 
     for rn in sorted(rounds.keys()):
-        score_round(rounds[rn], totals, errors, rn)
+        if fmt == "lineal":
+            score_round_lineal(rounds[rn], totals, errors, rn)
+        else:
+            score_round_podio(rounds[rn], totals, errors, rn)
 
     ranking = sorted(totals.items(), key=lambda x: (-x[1], x[0]))
     return totals, ranking, errors
@@ -251,12 +340,6 @@ def compute_scores(rounds: dict[int, list[str]]):
 # Output (formato decorado)
 # ----------------------------
 def render_fancy_output(dynamic_name_plain: str, totals: dict[str, int]) -> str:
-    """
-    Genera el formato decorado.
-    - dynamic_name_plain: nombre sin moderador (ej. "Ahorcado")
-    - El nombre se imprime en letras bonitas.
-    - Puntos con separador de miles con punto (1.680).
-    """
     name_plain = dynamic_name_plain or "Dinamica"
     name_fancy = to_fancy_text(name_plain, remove_accents=True)
 
@@ -266,16 +349,16 @@ def render_fancy_output(dynamic_name_plain: str, totals: dict[str, int]) -> str:
     out.append("╭ ㅤ⃝⃕🖤 ᮫   ▭ׅ ▭ׅ ▭ֹ  🔥ᱹ")
     out.append("╭ִ╼࣪━╼࣪╼࣪━╼࣪╼࣪━╼࣪━╯ . .")
 
-    out.append(f"𝇈⃘  𝆬 ֶָ֪ 𝆬🤍̵  ׅ 𖠵 {TEAM_NAME['🤍']} १ׁ꤫•")
-    out.append(f"　⃝ ◯˙ ᜔• {pts['🤍']}")
+    out.append(f"𝇈⃘  𝆬 ֶָ֪ 𝆬❤️̵  ׅ 𖠵 {TEAM_NAME['❤️']} १ׁ꤫•")
+    out.append(f"　⃝ ◯˙ ᜔• {pts['❤️']}")
     out.append("")
 
-    out.append(f"𝇈⃘  𝆬 ֶָ֪ 𝆬💚̵  ׅ 𖠵 {TEAM_NAME['💚']} १ׁ꤫•")
-    out.append(f"　⃝ ◯˙ ᜔• {pts['💚']}")
+    out.append(f"𝇈⃘  𝆬 ֶָ֪ 𝆬🧡̵  ׅ 𖠵 {TEAM_NAME['🧡']} १ׁ꤫•")
+    out.append(f"　⃝ ◯˙ ᜔• {pts['🧡']}")
     out.append("")
 
-    out.append(f"𝇈⃘  𝆬 ֶָ֪ 𝆬🖤̵  ׅ 𖠵 {TEAM_NAME['🖤']} १ׁ꤫•")
-    out.append(f"　⃝ ◯˙ ᜔• {pts['🖤']}")
+    out.append(f"𝇈⃘  𝆬 ֶָ֪ 𝆬🩶̵  ׅ 𖠵 {TEAM_NAME['🩶']} १ׁ꤫•")
+    out.append(f"　⃝ ◯˙ ᜔• {pts['🩶']}")
     out.append("")
     out.append(f"    ╾─̇─ ׄ  𖤐 ׅ ⇢ {name_fancy}  ׅ  ׅ ׅ   ׄ  ׄ  ׄ ")
     out.append("╰▭ׄ ׅ▬ׅ ▭ׄ ׅ▬ׅ ▭ׄ ׅ▬ׅ ׄ▭ׅ ׄ▬ׅ ׄ▭ ׅ ׄ▬ׅ ִ")
@@ -291,18 +374,21 @@ st.title("🧮 Contador de dinámicas")
 
 st.markdown(
     """
-Pega aquí el input completo.
+Pega aquí el input completo. La app detecta el formato automáticamente.
 
-**Formato:**
-- La **primera línea** (no vacía) es el encabezado (ej. `Ahorcado - Areli 🐧`).
-- Para el **nombre de la dinámica**, se usa solo lo de antes del `-` (trim).
-- Cada ronda inicia con `N.`.
-- La línea del `N.` es el **podio** y tiene **3 posiciones**:
-  - 1er lugar = 100, 2do = 90, 3er = 80
-  - Empate por posición con paréntesis, ej: `1. 🖤(🤍💚)💚`
-  - **Validación:** si hay paréntesis en el podio, deben contener **EXACTAMENTE 2 emojis**
-- Las líneas siguientes dentro de esa ronda: **cada emoji vale 60**.
-- Líneas en blanco se ignoran (WhatsApp suele meter espacios invisibles).
+**Formato clásico (podio):**
+- Primera línea = encabezado (`Ahorcado - Areli 🐧`)
+- Cada ronda `N.` tiene el podio en la misma línea con **3 posiciones** (1ro=100, 2do=90, 3ro=80)
+- Las líneas siguientes dentro de la ronda: cada emoji vale **60 pts**
+- Empates con paréntesis: `1. 🖤(🤍💚)💚`
+
+**Formato lineal (nuevo):**
+- Primera línea = encabezado
+- Cada ronda `N.` es **una sola línea** con todas las posiciones en orden
+- 1ra posición=100, 2da=90, 3ra=80, resto=60
+- Empates con paréntesis: `1. ❤️(🧡🩶)🩶❤️...`
+
+En ambos formatos los paréntesis deben contener **exactamente 2 emojis**.
 """
 )
 
@@ -312,9 +398,13 @@ if st.button("Calcular"):
     title_raw, rounds = parse_input(text)
     dynamic_name_plain = extract_dynamic_name(title_raw)
 
-    totals, ranking, errors = compute_scores(rounds)
+    fmt = detect_format(rounds)
+    fmt_label = "📋 Formato detectado: **Lineal** (nuevo)" if fmt == "lineal" else "📋 Formato detectado: **Podio** (clásico)"
+
+    totals, ranking, errors = compute_scores(rounds, fmt)
 
     st.subheader(dynamic_name_plain or "Resultados")
+    st.info(fmt_label)
     st.write(f"Rondas detectadas: **{len(rounds)}**")
 
     if errors:
@@ -332,52 +422,80 @@ if st.button("Calcular"):
     with st.expander("Ver rondas parseadas (debug)"):
         for rn in sorted(rounds.keys()):
             st.markdown(f"## Ronda {rn}")
-
             lines = rounds[rn]
+
             if not lines:
                 st.write("⚠️ Sin datos")
                 st.markdown("---")
                 continue
 
-            st.markdown("### 🥇 Podio")
-            podium = lines[0]
-            positions, podio_errors = parse_podium_positions(podium)
+            if fmt == "lineal":
+                # --- Debug formato lineal ---
+                line_raw = lines[0]
+                positions, line_errors = parse_positions_line(line_raw)
 
-            if podio_errors:
-                for e in podio_errors:
-                    st.write(f"⚠️ {e}")
+                if line_errors:
+                    for e in line_errors:
+                        st.write(f"⚠️ {e}")
 
-            pts_map = [100, 90, 80]
-            if len(positions) != 3:
-                st.write(f"❌ Podio inválido: `{podium}`")
-            else:
-                for pos_idx, (pos, pts) in enumerate(zip(positions, pts_map), start=1):
-                    if len(pos) == 1:
-                        st.write(f"Posición {pos_idx}: {pos[0]} → {format_points(pts)} pts")
+                pts_map = [100, 90, 80]
+                temp_totals = defaultdict(int)
+
+                for pos_idx, pos_emojis in enumerate(positions):
+                    pts = pts_map[pos_idx] if pos_idx < len(pts_map) else 60
+                    label = f"Posición {pos_idx + 1}"
+                    if len(pos_emojis) == 1:
+                        st.write(f"{label}: {pos_emojis[0]} → {format_points(pts)} pts")
                     else:
-                        st.write(f"Posición {pos_idx}: {' '.join(pos)} → {format_points(pts)} pts c/u (empate)")
-
-            if len(lines) > 1:
-                st.markdown("### 📌 Líneas extra (60 pts c/u)")
-                for idx, extra in enumerate(lines[1:], start=2):
-                    emos = emojis_in_nonpodium_line(extra)
-                    subtotal = len(emos) * 60
-                    shown = normalize_line(extra)
-                    st.write(f"Línea {idx}: {shown} — **{format_points(subtotal)} puntos**")
-
-            st.markdown("### 📊 Total por ronda")
-            temp_totals = defaultdict(int)
-
-            if len(positions) == 3:
-                for pos, pts in zip(positions, pts_map):
-                    for emo in pos:
+                        st.write(f"{label}: {' '.join(pos_emojis)} → {format_points(pts)} pts c/u (empate)")
+                    for emo in pos_emojis:
                         temp_totals[emo] += pts
 
-            for extra in lines[1:]:
-                for emo in emojis_in_nonpodium_line(extra):
-                    temp_totals[emo] += 60
+                st.markdown("### 📊 Total por ronda")
+                for emo, pts in sorted(temp_totals.items(), key=lambda x: (-x[1], x[0])):
+                    st.write(f"{emo}: **{format_points(pts)}**")
 
-            for emo, pts in sorted(temp_totals.items(), key=lambda x: (-x[1], x[0])):
-                st.write(f"{emo}: **{format_points(pts)}**")
+            else:
+                # --- Debug formato podio (clásico) ---
+                st.markdown("### 🥇 Podio")
+                podium = lines[0]
+                positions, podio_errors = parse_positions_line(podium)
+
+                if podio_errors:
+                    for e in podio_errors:
+                        st.write(f"⚠️ {e}")
+
+                pts_map = [100, 90, 80]
+                if len(positions) != 3:
+                    st.write(f"❌ Podio inválido: `{podium}`")
+                else:
+                    for pos_idx, (pos, pts) in enumerate(zip(positions, pts_map), start=1):
+                        if len(pos) == 1:
+                            st.write(f"Posición {pos_idx}: {pos[0]} → {format_points(pts)} pts")
+                        else:
+                            st.write(f"Posición {pos_idx}: {' '.join(pos)} → {format_points(pts)} pts c/u (empate)")
+
+                if len(lines) > 1:
+                    st.markdown("### 📌 Líneas extra (60 pts c/u)")
+                    for idx, extra in enumerate(lines[1:], start=2):
+                        emos = emojis_in_nonpodium_line(extra)
+                        subtotal = len(emos) * 60
+                        shown = normalize_line(extra)
+                        st.write(f"Línea {idx}: {shown} — **{format_points(subtotal)} puntos**")
+
+                st.markdown("### 📊 Total por ronda")
+                temp_totals = defaultdict(int)
+
+                if len(positions) == 3:
+                    for pos, pts in zip(positions, pts_map):
+                        for emo in pos:
+                            temp_totals[emo] += pts
+
+                for extra in lines[1:]:
+                    for emo in emojis_in_nonpodium_line(extra):
+                        temp_totals[emo] += 60
+
+                for emo, pts in sorted(temp_totals.items(), key=lambda x: (-x[1], x[0])):
+                    st.write(f"{emo}: **{format_points(pts)}**")
 
             st.markdown("---")
