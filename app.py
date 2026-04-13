@@ -14,13 +14,36 @@ except Exception:
 
 ROUND_RE = re.compile(r"^\s*(\d+)\.\s*(.*)\s*$")
 
-# Equipos fijos (por ahora)
-TEAM_ORDER = ["❤️", "🧡", "🩶"]
-TEAM_NAME = {
-    "❤️": "𝐅𝐞𝐫𝐫𝐚𝐫𝐢",
-    "🧡": "𝐌𝐜𝐋𝐚𝐫𝐞𝐧",
-    "🩶": "𝐌𝐞𝐫𝐜𝐞𝐝𝐞𝐬",
-}
+# ----------------------------
+# Carga de equipos desde teams.json
+# ----------------------------
+import json
+import pathlib
+
+_TEAMS_FILE = pathlib.Path(__file__).parent / "teams.json"
+_DEFAULT_TEAMS = [
+    {"emoji": "❤️", "name": "Ferrari"},
+    {"emoji": "🧡", "name": "McLaren"},
+    {"emoji": "🩶", "name": "Mercedes"},
+]
+
+def load_teams() -> tuple[list[str], dict[str, str]]:
+    """
+    Lee teams.json y devuelve (TEAM_ORDER, TEAM_NAME).
+    Los nombres se convierten automáticamente a letras fancy.
+    Si el archivo no existe lo crea con los valores por defecto.
+    """
+    if not _TEAMS_FILE.exists():
+        _TEAMS_FILE.write_text(
+            json.dumps(_DEFAULT_TEAMS, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    data = json.loads(_TEAMS_FILE.read_text(encoding="utf-8"))
+    order = [t["emoji"] for t in data]
+    names = {t["emoji"]: to_fancy_text(t["name"], remove_accents=True) for t in data}
+    return order, names
+
+TEAM_ORDER, TEAM_NAME = load_teams()
 
 
 # ----------------------------
