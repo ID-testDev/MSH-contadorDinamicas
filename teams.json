@@ -1,5 +1,8 @@
-[
-  {"emoji": "🩵", "name": "Olimpo"},
-  {"emoji": "🧡", "name": "Half-Blood"},
-  {"emoji": "💜", "name": "Jupiter"}
-]
+{
+  "header_emojis": {"left": "🖤", "right": "🔥"},
+  "teams": [
+    {"emoji": "❤️", "name": "Ferrari"},
+    {"emoji": "🧡", "name": "McLaren"},
+    {"emoji": "🩶", "name": "Mercedes"}
+  ]
+}

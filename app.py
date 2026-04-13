@@ -259,29 +259,35 @@ import json
 import pathlib
 
 _TEAMS_FILE = pathlib.Path(__file__).parent / "teams.json"
-_DEFAULT_TEAMS = [
-    {"emoji": "❤️", "name": "Ferrari"},
-    {"emoji": "🧡", "name": "McLaren"},
-    {"emoji": "🩶", "name": "Mercedes"},
-]
+_DEFAULT_CONFIG = {
+    "header_emojis": {"left": "🖤", "right": "🔥"},
+    "teams": [
+        {"emoji": "❤️", "name": "Ferrari"},
+        {"emoji": "🧡", "name": "McLaren"},
+        {"emoji": "🩶", "name": "Mercedes"},
+    ],
+}
 
-def load_teams() -> tuple[list[str], dict[str, str]]:
+def load_teams() -> tuple[list[str], dict[str, str], str, str]:
     """
-    Lee teams.json y devuelve (TEAM_ORDER, TEAM_NAME).
+    Lee teams.json y devuelve (TEAM_ORDER, TEAM_NAME, header_left, header_right).
     Los nombres se convierten automáticamente a letras fancy.
     Si el archivo no existe lo crea con los valores por defecto.
+    Compatible con el formato anterior (lista simple).
     """
     if not _TEAMS_FILE.exists():
         _TEAMS_FILE.write_text(
-            json.dumps(_DEFAULT_TEAMS, ensure_ascii=False, indent=2),
+            json.dumps(_DEFAULT_CONFIG, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
-    data = json.loads(_TEAMS_FILE.read_text(encoding="utf-8"))
-    order = [t["emoji"] for t in data]
-    names = {t["emoji"]: to_fancy_text(t["name"], remove_accents=True) for t in data}
-    return order, names
+    config = json.loads(_TEAMS_FILE.read_text(encoding="utf-8"))
+    teams = config.get("teams", config) if isinstance(config, dict) else config
+    header = config.get("header_emojis", {"left": "🖤", "right": "🔥"}) if isinstance(config, dict) else {"left": "🖤", "right": "🔥"}
+    order = [t["emoji"] for t in teams]
+    names = {t["emoji"]: to_fancy_text(t["name"], remove_accents=True) for t in teams}
+    return order, names, header.get("left", "🖤"), header.get("right", "🔥")
 
-TEAM_ORDER, TEAM_NAME = load_teams()
+TEAM_ORDER, TEAM_NAME, HEADER_LEFT, HEADER_RIGHT = load_teams()
 
 
 # ----------------------------
@@ -370,20 +376,14 @@ def render_fancy_output(dynamic_name_plain: str, totals: dict[str, int]) -> str:
     pts = {emo: format_points(int(totals.get(emo, 0))) for emo in TEAM_ORDER}
 
     out = []
-    out.append("╭ ㅤ⃝⃕🖤 ᮫   ▭ׅ ▭ׅ ▭ֹ  🔥ᱹ")
+    out.append(f"╭ ㅤ⃝⃕{HEADER_LEFT} ᮫   ▭ׅ ▭ׅ ▭ֹ  {HEADER_RIGHT}ᱹ")
     out.append("╭ִ╼࣪━╼࣪╼࣪━╼࣪╼࣪━╼࣪━╯ . .")
 
-    out.append(f"𝇈⃘  𝆬 ֶָ֪ 𝆬❤️̵  ׅ 𖠵 {TEAM_NAME['❤️']} १ׁ꤫•")
-    out.append(f"　⃝ ◯˙ ᜔• {pts['❤️']}")
-    out.append("")
+    for emo in TEAM_ORDER:
+        out.append(f"𝇈⃘  𝆬 ֶָ֪ 𝆬{emo}̵  ׅ 𖠵 {TEAM_NAME[emo]} १ׁ꤫•")
+        out.append(f"　⃝ ◯˙ ᜔• {pts[emo]}")
+        out.append("")
 
-    out.append(f"𝇈⃘  𝆬 ֶָ֪ 𝆬🧡̵  ׅ 𖠵 {TEAM_NAME['🧡']} १ׁ꤫•")
-    out.append(f"　⃝ ◯˙ ᜔• {pts['🧡']}")
-    out.append("")
-
-    out.append(f"𝇈⃘  𝆬 ֶָ֪ 𝆬🩶̵  ׅ 𖠵 {TEAM_NAME['🩶']} १ׁ꤫•")
-    out.append(f"　⃝ ◯˙ ᜔• {pts['🩶']}")
-    out.append("")
     out.append(f"    ╾─̇─ ׄ  𖤐 ׅ ⇢ {name_fancy}  ׅ  ׅ ׅ   ׄ  ׄ  ׄ ")
     out.append("╰▭ׄ ׅ▬ׅ ▭ׄ ׅ▬ׅ ▭ׄ ׅ▬ׅ ׄ▭ׅ ׄ▬ׅ ׄ▭ ׅ ׄ▬ׅ ִ")
 
