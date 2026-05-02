@@ -1,8 +1,8 @@
 {
-  "header_emojis": {"left": "💜", "right": "🦅"},
+  "header_emojis": {"left": "🖤", "right": "🌀"},
   "teams": [
-    {"emoji": "💜", "name": "Jupiter"},
-    {"emoji": "🧡", "name": "Half-Blood"},
-    {"emoji": "🩵", "name": "Olimpo"}
+    {"emoji": "♥️", "name": "Biles Bilinski"},
+    {"emoji": "🤍", "name": "Hunters"},
+    {"emoji": "🖤", "name": "Werewolves"}
   ]
 }
