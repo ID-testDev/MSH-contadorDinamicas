@@ -1,8 +1,8 @@
 {
-  "header_emojis": {"left": "🖤", "right": "🌈"},
+  "header_emojis": {"left": "🖤", "right": "⚒️"},
   "teams": [
-    {"emoji": "💛", "name": "Nirvana"},
-    {"emoji": "🖤", "name": "Pink Floyd"},
-    {"emoji": "♥️", "name": "Twenty One Pilots"}
+    {"emoji": "🩷", "name": "Citizens"},
+    {"emoji": "🖤", "name": "Rebels"},
+    {"emoji": "🤍", "name": "Winners"}
   ]
 }
